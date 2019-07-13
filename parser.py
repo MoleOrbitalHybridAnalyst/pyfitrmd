@@ -1,4 +1,3 @@
-import __builtin__
 import argparse
 
 class Parser(object):
@@ -18,6 +17,12 @@ class Parser(object):
         self._arg_parser.add_argument(
             '--parameters', default = 'parameters.list', 
             help = 'parameters to be fitted')
+        self._arg_parser.add_argument(
+            '--evb_in', default = 'evb.cfg', 
+            help = 'evb input file')
+        self._arg_parser.add_argument(
+            '--evb_par', default = 'evb.par', 
+            help = 'evb.par file included in evb_in')
 
     def parse(self):
         return self._arg_parser.parse_args()

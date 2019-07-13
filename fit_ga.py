@@ -12,4 +12,4 @@ class FitGA(FitMethod):
             '--ga_input', default = 'ga.inp', help = 'input file for GA')
 
     def setup(self):
-        self._input = np.
+        pass

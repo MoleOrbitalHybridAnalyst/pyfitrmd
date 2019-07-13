@@ -1,4 +1,4 @@
-import __builtin__
+from lammps import lammps
 
 class FitMethod(object):
 
@@ -9,4 +9,14 @@ class FitMethod(object):
         pass
 
     def setup(self):
+        """
+        set up class based on args parsed
+        """
+        pass
+
+    def update(self):
+        """
+        run lammps and then
+        update parameters based on lammps results
+        """
         pass
