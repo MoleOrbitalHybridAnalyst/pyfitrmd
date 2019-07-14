@@ -23,6 +23,9 @@ class Parser(object):
         self._arg_parser.add_argument(
             '--evb_par', default = 'evb.par', 
             help = 'evb.par file included in evb_in')
+        self._arg_parser.add_argument(
+            '--evb_fixid', default = 'evb', 
+            help = 'evb fix id used in restart files')
 
     def parse(self):
         return self._arg_parser.parse_args()
