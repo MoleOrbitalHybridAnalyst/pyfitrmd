@@ -57,20 +57,19 @@ class FitSD(FitMethod):
                 self._indexes[self._cnt_pos:end]
         self._cnt_pos = end % npoints
 
-    def update_evb_in(self, ipoint):
-        # NOTE why need to ipoint depenedent????
+    def update_evb_in(self):
         for ip, pname in enumerate(parameters):
             for idx, dx in enumerate([self._dx, -self._dx]):
-                fp = open("%s.%d.%d.%d"%(args.evb_in, ipoint, ip, idx), 'w')
+                fp = open("%s.%d.%d"%(args.evb_in, ip, idx), 'w')
                 evb_in = open(args.evb_in)
                 for line in evb_in:
                     if match(".+" + args.evb_par, line):
-                        print("#include \"%s.%d.%d.%d\""\
-                            %(args.evb_par, ipoint, ip, idx), file = fp)
+                        print("#include \"%s.%d.%d\""\
+                            %(args.evb_par, ip, idx), file = fp)
                     else:
                         print(line, file = fp, end = '')
                 fp.close(); evb_in.close()
-                fp = open("%s.%d.%d.%d"%(args.evb_par, ipoint, ip, idx), 'w')
+                fp = open("%s.%d.%d"%(args.evb_par, ip, idx), 'w')
                 evb_par = open(args.evb_par)
                 for line in evb_par:
                     if match("\s*([-.0-9eE]+).+" + pname, line):
@@ -80,7 +79,6 @@ class FitSD(FitMethod):
                 fp.close(); evb_par.close()
 
     def one_point_gradient(self, queue, ipoint):
-        self.update_evb_in(ipoint)
         lmp = lammps(cmdargs = ["-screen", "none"])
 #        lmp = lammps()
         restart = restarts[ipoint]
@@ -97,21 +95,22 @@ class FitSD(FitMethod):
         for ip in xrange(len(parameters)):
             errors = []
             for idx in range(2):
-                suffix = "%d.%d.%d"%(ipoint, ip, idx)
+                suffix = "%d.%d"%(ip, idx)
                 lmp.command("fix %s all evb %s.%s evb.out.%s evb.top"%\
                     (args.evb_fixid, args.evb_in, suffix, suffix))
                 lmp.command("run 0")
                 # compute error
                 # TODO write Error class to do this compuation handling pointers
                 # considering L1 or L2 norm, considering WEIGHT
-                order = argsort(tag)
-                ref = references[ipoint]
-                errors.append( (array(f)[order] - ref)**2 )
-            gradient.append( (errors[0] - errors[1]) / 2 / self._dx )
+#                order = argsort(tag)
+#                ref = references[ipoint]
+#                errors.append( (array(f)[order] - ref)**2 )
+#            gradient.append( (errors[0] - errors[1]) / 2 / self._dx )
         lmp.close()
         queue.put(gradient)
 
     def update(self):
+        self.update_evb_in()
         self.make_batch()
         q = Queue()
         processes = []
@@ -124,3 +123,4 @@ class FitSD(FitMethod):
         gradients = sum( [q.get() for indx in self._batch] )
         print(gradients)
         # TODO delete temporary evb.cfg evb.out and evb.par
+        # TODO update parameters based on the gradient
