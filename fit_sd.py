@@ -15,7 +15,7 @@ class FitSD(FitMethod):
     def add_argument(self):
         super(FitSD, self).add_argument()
         parser._arg_parser.add_argument(
-            '--sd_dx', default = 1e-3, 
+            '--sd_dx', default = 1e-4, 
             help = 'displacement for numerical derivatives')
         parser._arg_parser.add_argument(
             '--sd_lr', default = 0.01, help = 'initial learning rate')
@@ -82,15 +82,13 @@ class FitSD(FitMethod):
         lmp = lammps(cmdargs = ["-screen", "none"])
 #        lmp = lammps()
         restart = restarts[ipoint]
-        reference = references[ipoint]
+        ref = references[ipoint]
         for line in lammps_input._lines:
             if match("\s*read_restart", line):
                 lmp.command("read_restart " + restart)
             else:
                 lmp.command(line)
 
-        tag = lmp.extract_atom("id", 0)
-        f = lmp.extract_atom("f", 3)
         gradient = []
         for ip in xrange(len(parameters)):
             errors = []
@@ -99,15 +97,14 @@ class FitSD(FitMethod):
                 lmp.command("fix %s all evb %s.%s evb.out.%s evb.top"%\
                     (args.evb_fixid, args.evb_in, suffix, suffix))
                 lmp.command("run 0")
+                tag = lmp.extract_atom("id", 0)
+                f = lmp.extract_atom("f", 3)
                 # compute error
-                # TODO write Error class to do this compuation handling pointers
-                # considering L1 or L2 norm, considering WEIGHT
-#                order = argsort(tag)
-#                ref = references[ipoint]
-#                errors.append( (array(f)[order] - ref)**2 )
-#            gradient.append( (errors[0] - errors[1]) / 2 / self._dx )
+                errors.append( error.compute(tag, f, ref, weight.get(ipoint)) )
+            gradient.append( (errors[0] - errors[1]) / 2 / self._dx )
         lmp.close()
-        queue.put(gradient)
+        queue.put(array(gradient))
+        print(ipoint, gradient)
 
     def update(self):
         self.update_evb_in()

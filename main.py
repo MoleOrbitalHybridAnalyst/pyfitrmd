@@ -7,13 +7,15 @@ from parser import Parser
 from fit_method import FitMethod
 from fit_sd import FitSD
 from lammps_input import LammpsInput
+from error import Error
+from weight import Weight
 
 from lammpstrj_py2 import *
 
-def cal_error(itask):
-    idata = batch[itask]
-    restart = restarts[idata]
-    reference = references[idata]
+#def cal_error(itask):
+#    idata = batch[itask]
+#    restart = restarts[idata]
+#    reference = references[idata]
 
 if __name__ == '__main__':
 
@@ -29,7 +31,10 @@ if __name__ == '__main__':
     # initialization
     __builtin__.restarts = np.genfromtxt(args.restarts, dtype = str)
     __builtin__.references = np.genfromtxt(args.references, dtype = str)
+    __builtin__.references = [np.loadtxt(_) for _ in references]
     __builtin__.parameters = np.genfromtxt(args.parameters, dtype = str)
+    __builtin__.error = Error(int(args.norm_l))
+    __builtin__.weight = Weight(args.weight)
     __builtin__.para_values = dict()
     counts = np.zeros(len(parameters))
     evb_par = open(args.evb_par)

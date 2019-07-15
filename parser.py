@@ -26,6 +26,12 @@ class Parser(object):
         self._arg_parser.add_argument(
             '--evb_fixid', default = 'evb', 
             help = 'evb fix id used in restart files')
+        self._arg_parser.add_argument(
+            '--norm_l', default = 2, 
+            help = 'L-norm for force error')
+        self._arg_parser.add_argument(
+            '--weight', default = 'weight.dat', 
+            help = 'weight for atomic forces')
 
     def parse(self):
         return self._arg_parser.parse_args()
