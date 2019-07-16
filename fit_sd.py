@@ -2,8 +2,10 @@ from __future__ import print_function
 from multiprocessing import cpu_count, Process, Queue
 from time import time, sleep
 from numpy.random import seed, shuffle
-from numpy import array, argsort
+from numpy import array, argsort, sign
 from re import match
+from os import path
+import json
 
 from fit_method import FitMethod, lammps
 
@@ -18,7 +20,7 @@ class FitSD(FitMethod):
             '--sd_dx', default = 1e-4, 
             help = 'displacement for numerical derivatives')
         parser._arg_parser.add_argument(
-            '--sd_lr', default = 0.01, help = 'initial learning rate')
+            '--sd_lr', default = 1e-4, help = 'initial learning rate')
         parser._arg_parser.add_argument(
             '--sd_batch_size', default = 'ncpus', help = 'batch size')
         parser._arg_parser.add_argument(
@@ -27,6 +29,9 @@ class FitSD(FitMethod):
         parser._arg_parser.add_argument(
             '--sd_seed', default = 'time', 
             help = 'seed for random shuffle')
+        parser._arg_parser.add_argument(
+            '--sd_update_bound', default = 0.2, 
+            help = 'update parameters up to this ratio')
 
     def setup(self):
         super(FitSD, self).setup()
@@ -45,6 +50,8 @@ class FitSD(FitMethod):
         self._indexes = list(xrange(len(restarts)))
         self._cnt_pos = 0
         shuffle(self._indexes)
+        self._istep = 0
+        self._bound = float(args.sd_update_bound)
 
     def make_batch(self):
         npoints = len(self._indexes)
@@ -58,6 +65,29 @@ class FitSD(FitMethod):
         self._cnt_pos = end % npoints
 
     def update_evb_in(self):
+        # this is stupid (kind of duplicated), modify it in the future:
+        fp = open("%s.step%d"%(args.evb_in, self._istep), 'w')
+        evb_in = open(args.evb_in)
+        for line in evb_in:
+            if match(".+" + args.evb_par, line):
+                print("#include \"%s.step%d\""\
+                    %(args.evb_par, self._istep), file = fp)
+            else:
+                print(line, file = fp, end = '')
+        fp.close(); evb_in.close()
+        fp = open("%s.step%d"%(args.evb_par, self._istep), 'w')
+        evb_par = open(args.evb_par)
+        for line in evb_par:
+            is_para_line = False
+            for ip, pname in enumerate(parameters):
+                if match("\s*([-.0-9eE]+).+" + pname + "\s+", line):
+                    print(para_values[pname], file = fp)
+                    is_para_line = True
+                    break
+            if not is_para_line:
+                print(line, file = fp, end = '')
+        fp.close(); evb_par.close()
+
         for ip, pname in enumerate(parameters):
             for idx, dx in enumerate([self._dx, -self._dx]):
                 fp = open("%s.%d.%d"%(args.evb_in, ip, idx), 'w')
@@ -72,9 +102,16 @@ class FitSD(FitMethod):
                 fp = open("%s.%d.%d"%(args.evb_par, ip, idx), 'w')
                 evb_par = open(args.evb_par)
                 for line in evb_par:
-                    if match("\s*([-.0-9eE]+).+" + pname, line):
-                        print(para_values[pname] + dx, file = fp)
-                    else:
+                    is_para_line = False
+                    for ip_, pname_ in enumerate(parameters):
+                        if match("\s*([-.0-9eE]+).+" + pname_ + "\s+", line):
+                            if ip_ == ip:
+                                print(para_values[pname_] + dx, file = fp)
+                            else:
+                                print(para_values[pname_], file = fp)
+                            is_para_line = True
+                            break
+                    if not is_para_line:
                         print(line, file = fp, end = '')
                 fp.close(); evb_par.close()
 
@@ -89,24 +126,43 @@ class FitSD(FitMethod):
             else:
                 lmp.command(line)
 
+        # do one step with current parameters to provide 
+        # evb.top for following EVB calculations
+        lmp.command("fix %s all evb %s.step%d evb.out.step%d evb.top"%\
+            (args.evb_fixid, args.evb_in, self._istep, self._istep))
+        lmp.command("run 0")
+#        if not path.isfile("evb.top.%d"%ipoint):
+#            lmp.command("write_top evb.top.%d"%ipoint)
+        lmp.command("write_top evb.top.%d"%ipoint)
+        tag = lmp.extract_atom("id", 0)
+        f = lmp.extract_atom("f", 3)
+        curr_error = error.compute(tag, f, ref, weight.get(ipoint))
         gradient = []
         for ip in xrange(len(parameters)):
             errors = []
             for idx in range(2):
+                # @@@@
+#                print("istep", self._istep, "ip", ip, "idx", idx)
                 suffix = "%d.%d"%(ip, idx)
-                lmp.command("fix %s all evb %s.%s evb.out.%s evb.top"%\
-                    (args.evb_fixid, args.evb_in, suffix, suffix))
+                lmp.command("fix %s all evb %s.%s evb.out.%s evb.top.%d"%\
+                    (args.evb_fixid, args.evb_in, suffix, suffix, ipoint))
+                # @@@@
+#                print("istep", self._istep, "ip", ip, "idx", idx)
                 lmp.command("run 0")
+                # @@@@
+#                print("istep", self._istep, "ip", ip, "idx", idx)
                 tag = lmp.extract_atom("id", 0)
                 f = lmp.extract_atom("f", 3)
                 # compute error
                 errors.append( error.compute(tag, f, ref, weight.get(ipoint)) )
+#            print(errors)
             gradient.append( (errors[0] - errors[1]) / 2 / self._dx )
         lmp.close()
-        queue.put(array(gradient))
-        print(ipoint, gradient)
+        queue.put((array(gradient), curr_error))
+#        print(ipoint, gradient)
 
     def update(self):
+        super(FitSD, self).update()
         self.update_evb_in()
         self.make_batch()
         q = Queue()
@@ -117,7 +173,33 @@ class FitSD(FitMethod):
             processes.append(p)
         for p in processes:
             p.join()
-        gradients = sum( [q.get() for indx in self._batch] )
-        print(gradients)
-        # TODO delete temporary evb.cfg evb.out and evb.par
-        # TODO update parameters based on the gradient
+        results = [q.get() for indx in self._batch]
+        self._gradient = \
+            sum( [results[_][0] for _ in xrange(self._batch_size)] )
+        self._curr_error = \
+            sum( [results[_][1] for _ in xrange(self._batch_size)] )
+        # TODO delete temporary evb.cfg evb.out evb.top and evb.par
+        for ip, pname in enumerate(parameters):
+            move = self._lr * self._gradient[ip]
+            if abs(move) > self._bound * abs(para_values[pname]):
+                move = sign(move) * self._bound * abs(para_values[pname])
+                print("WARNING:", pname, 
+                      "update out of bound at step", self._istep)
+            para_values[pname] -= move
+        self._istep += 1
+        if self._istep % self._ndecay == 0:
+            self._lr /= 2
+
+    def verbose(self):
+        super(FitSD, self).verbose()
+        print("error =", self._curr_error)
+        print("para_values =", para_values)
+        print("gradient = ", self._gradient)
+        print("learning rate = ", self._lr)
+
+    def checkpoint(self):
+        super(FitSD, self).checkpoint()
+        j = json.dumps(para_values)
+        f = open("%s.step%d"%(args.checkpoint_name, self._istep), "w")
+        f.write(j)
+        f.close()

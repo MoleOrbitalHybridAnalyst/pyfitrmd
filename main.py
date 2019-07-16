@@ -36,11 +36,14 @@ if __name__ == '__main__':
     __builtin__.error = Error(int(args.norm_l))
     __builtin__.weight = Weight(args.weight)
     __builtin__.para_values = dict()
+    __builtin__.run_steps = int(args.run_steps)
+    __builtin__.checkpoint_stride = int(args.checkpoint_stride)
+    __builtin__.verbose_stride = int(args.verbose_stride)
     counts = np.zeros(len(parameters))
     evb_par = open(args.evb_par)
     for line in evb_par:
         for ip, p in enumerate(parameters):
-            m = re.match("\s*([-.0-9eE]+).+" + p, line)
+            m = re.match("\s*([-.0-9eE]+).+" + p + "\s+", line)
             if m:
                 counts[ip] += 1
                 para_values[p] = float(m.group(1))
@@ -78,8 +81,15 @@ if __name__ == '__main__':
 
     # simple outputs
     print("%d data points provided"%len(restarts))
-    print("%d parameters to be fitted"%len(parameters))
+#    print("%d parameters to be fitted"%len(parameters))
+    print("initial parameters:")
+    print(para_values)
 
-    fit_method.update()
+    for i in xrange(run_steps):
+        fit_method.update()
+        if i % verbose_stride == 0:
+            fit_method.verbose()
+        if i % checkpoint_stride == 0:
+            fit_method.checkpoint()
 
     # finish things

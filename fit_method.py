@@ -20,3 +20,9 @@ class FitMethod(object):
         update parameters based on lammps results
         """
         pass
+
+    def verbose(self):
+        pass
+
+    def checkpoint(self):
+        pass

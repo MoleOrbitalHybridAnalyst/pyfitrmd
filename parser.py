@@ -30,8 +30,19 @@ class Parser(object):
             '--norm_l', default = 2, 
             help = 'L-norm for force error')
         self._arg_parser.add_argument(
-            '--weight', default = 'weight.dat', 
-            help = 'weight for atomic forces')
+            '--weight', help = 'weight file name (prefix) for atomic forces')
+        self._arg_parser.add_argument(
+            '--run_steps', default = 1e8,
+            help = 'total steps of optimization to run')
+        self._arg_parser.add_argument(
+            '--verbose_stride', default = 20,
+            help = 'verbose every this steps')
+        self._arg_parser.add_argument(
+            '--checkpoint_stride', default = 10,
+            help = 'write checkpoint every this step')
+        self._arg_parser.add_argument(
+            '--checkpoint_name', default = 'checkpoint',
+            help = 'checkpoint file name')
 
     def parse(self):
         return self._arg_parser.parse_args()
