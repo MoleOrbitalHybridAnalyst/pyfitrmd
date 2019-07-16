@@ -4,7 +4,7 @@ from time import time, sleep
 from numpy.random import seed, shuffle
 from numpy import array, argsort, sign
 from re import match
-from os import path
+from os import path, system
 import json
 
 from fit_method import FitMethod, lammps
@@ -20,11 +20,11 @@ class FitSD(FitMethod):
             '--sd_dx', default = 1e-4, 
             help = 'displacement for numerical derivatives')
         parser._arg_parser.add_argument(
-            '--sd_lr', default = 1e-4, help = 'initial learning rate')
+            '--sd_lr', default = 1e-3, help = 'initial learning rate')
         parser._arg_parser.add_argument(
             '--sd_batch_size', default = 'ncpus', help = 'batch size')
         parser._arg_parser.add_argument(
-            '--sd_ndecay', default = 100, 
+            '--sd_ndecay', default = 1000, 
             help = 'decay learning rate every this steps')
         parser._arg_parser.add_argument(
             '--sd_seed', default = 'time', 
@@ -179,6 +179,7 @@ class FitSD(FitMethod):
         self._curr_error = \
             sum( [results[_][1] for _ in xrange(self._batch_size)] )
         # TODO delete temporary evb.cfg evb.out evb.top and evb.par
+        system("rm %s.* %s.* evb.top.* evb.out.*"%(args.evb_in, args.evb_par))
         for ip, pname in enumerate(parameters):
             move = self._lr * self._gradient[ip]
             if abs(move) > self._bound * abs(para_values[pname]):
