@@ -43,6 +43,10 @@ class Parser(object):
         self._arg_parser.add_argument(
             '--checkpoint_name', default = 'checkpoint',
             help = 'checkpoint file name')
+        self._arg_parser.add_argument(
+            '--debug', action = 'store_true',
+            help = 'print debug info')
+
 
     def parse(self):
         return self._arg_parser.parse_args()

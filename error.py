@@ -16,6 +16,7 @@ class Error(object):
             w = ones(len(ref))
         for i in xrange(len(ref)):
             _id = tag[i]
-            for k in xrange(3):
-                err += w[_id-1] * self._norm(f[i][k] - ref[_id-1][k+1])
+            if w[_id-1]:
+                for k in xrange(3):
+                    err += w[_id-1] * self._norm(f[i][k] - ref[_id-1][k+1])
         return err

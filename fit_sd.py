@@ -32,6 +32,9 @@ class FitSD(FitMethod):
         parser._arg_parser.add_argument(
             '--sd_update_bound', default = 0.2, 
             help = 'update parameters up to this ratio')
+        parser._arg_parser.add_argument(
+            '--sd_nobound_limit', default = 0.0,
+            help = 'do not apply bound if abs of parameter lower than this')
 
     def setup(self):
         super(FitSD, self).setup()
@@ -52,6 +55,8 @@ class FitSD(FitMethod):
         shuffle(self._indexes)
         self._istep = 0
         self._bound = float(args.sd_update_bound)
+        self._nb_lim = float(args.sd_nobound_limit)
+        print("FitSD: batch size =", self._batch_size)
 
     def make_batch(self):
         npoints = len(self._indexes)
@@ -120,19 +125,29 @@ class FitSD(FitMethod):
 #        lmp = lammps()
         restart = restarts[ipoint]
         ref = references[ipoint]
+        info = "DEBUG: istep %d ipoint %d:"%(self._istep, ipoint)
         for line in lammps_input._lines:
             if match("\s*read_restart", line):
+                if args.debug:
+                    print(info, "read_restart " + restart)
                 lmp.command("read_restart " + restart)
             else:
                 lmp.command(line)
 
         # do one step with current parameters to provide 
         # evb.top for following EVB calculations
+        if args.debug:
+            print(info, "fix %s all evb %s.step%d evb.out.step%d evb.top"%\
+            (args.evb_fixid, args.evb_in, self._istep, self._istep))
         lmp.command("fix %s all evb %s.step%d evb.out.step%d evb.top"%\
             (args.evb_fixid, args.evb_in, self._istep, self._istep))
+        if args.debug:
+            print(info, "run 0")
         lmp.command("run 0")
 #        if not path.isfile("evb.top.%d"%ipoint):
 #            lmp.command("write_top evb.top.%d"%ipoint)
+        if args.debug:
+            print(info, "write_top evb.top.%d"%ipoint)
         lmp.command("write_top evb.top.%d"%ipoint)
         tag = lmp.extract_atom("id", 0)
         f = lmp.extract_atom("f", 3)
@@ -141,24 +156,44 @@ class FitSD(FitMethod):
         for ip in xrange(len(parameters)):
             errors = []
             for idx in range(2):
+                info = "DEBUG: istep %d ipoint %d ip %d idx %d:"\
+                        %(self._istep, ipoint, ip, idx)
                 # @@@@
-#                print("istep", self._istep, "ip", ip, "idx", idx)
+#                if args.debug:
+#                    print( "istep", self._istep, "ipoint", ipoint, 
+#                            "ip", ip, "idx", idx)
                 suffix = "%d.%d"%(ip, idx)
+                if args.debug:
+                    print(info, "fix %s all evb %s.%s evb.out.%s evb.top.%d"%\
+                    (args.evb_fixid, args.evb_in, suffix, suffix, ipoint))
                 lmp.command("fix %s all evb %s.%s evb.out.%s evb.top.%d"%\
                     (args.evb_fixid, args.evb_in, suffix, suffix, ipoint))
                 # @@@@
-#                print("istep", self._istep, "ip", ip, "idx", idx)
+#                if args.debug:
+#                    print( "istep", self._istep, "ipoint", ipoint, 
+#                            "ip", ip, "idx", idx)
+                if args.debug:
+                    print(info, "run 0")
                 lmp.command("run 0")
                 # @@@@
-#                print("istep", self._istep, "ip", ip, "idx", idx)
+#                if args.debug:
+#                    print( "istep", self._istep, "ipoint", ipoint, 
+#                            "ip", ip, "idx", idx)
                 tag = lmp.extract_atom("id", 0)
                 f = lmp.extract_atom("f", 3)
                 # compute error
                 errors.append( error.compute(tag, f, ref, weight.get(ipoint)) )
 #            print(errors)
             gradient.append( (errors[0] - errors[1]) / 2 / self._dx )
+            # sanity check for errors
+            if abs(errors[0] - errors[1]) / abs(sum(errors)) > 0.1:
+                print("WARNING: largely deivated errros for " +\
+                    "istep = %d ipoint = %d ip = %d idx = %d"\
+                    %(self._istep, ipoint, ip, idx))
         lmp.close()
         queue.put((array(gradient), curr_error))
+        if args.debug:
+            print("queue.put at istep %d ipoint %d"%(self._istep, ipoint))
 #        print(ipoint, gradient)
 
     def update(self):
@@ -178,12 +213,19 @@ class FitSD(FitMethod):
             sum( [results[_][0] for _ in xrange(self._batch_size)] )
         self._curr_error = \
             sum( [results[_][1] for _ in xrange(self._batch_size)] )
-        # TODO delete temporary evb.cfg evb.out evb.top and evb.par
+        # sanity check for evb.out.*
+        print("Number of inf or nan in evb.out:")
+        system("egrep \"inf|nan|Nan|NaN\" evb.out.* | wc -l")
         system("rm %s.* %s.* evb.top.* evb.out.*"%(args.evb_in, args.evb_par))
         for ip, pname in enumerate(parameters):
             move = self._lr * self._gradient[ip]
-            if abs(move) > self._bound * abs(para_values[pname]):
-                move = sign(move) * self._bound * abs(para_values[pname])
+            abs_p = abs(para_values[pname])
+            if abs_p > self._nb_lim and abs(move) > self._bound * abs_p:
+                move = sign(move) * self._bound * abs_p
+                print("WARNING:", pname, 
+                      "update out of bound at step", self._istep)
+            if abs_p <= self._nb_lim and abs(move) > self._bound * abs_p:
+                move = sign(move) * 2 * abs_p
                 print("WARNING:", pname, 
                       "update out of bound at step", self._istep)
             para_values[pname] -= move
