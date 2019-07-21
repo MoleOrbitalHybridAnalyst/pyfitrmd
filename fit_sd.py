@@ -2,7 +2,7 @@ from __future__ import print_function
 from multiprocessing import cpu_count, Process, Queue
 from time import time, sleep
 from numpy.random import seed, shuffle
-from numpy import array, argsort, sign
+from numpy import array, argsort, sign, savetxt
 from re import match
 from os import path, system
 import json
@@ -68,6 +68,7 @@ class FitSD(FitMethod):
             self._batch = \
                 self._indexes[self._cnt_pos:end]
         self._cnt_pos = end % npoints
+        savetxt("batch.list", self._batch, fmt = "%d")
 
     def update_evb_in(self):
         # this is stupid (kind of duplicated), modify it in the future:
