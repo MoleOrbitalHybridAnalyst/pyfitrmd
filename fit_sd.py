@@ -2,7 +2,7 @@ from __future__ import print_function
 from multiprocessing import cpu_count, Process, Queue
 from time import time, sleep
 from numpy.random import seed, shuffle
-from numpy import array, argsort, sign
+from numpy import array, argsort, sign, savetxt
 from re import match
 from os import path, system
 import json
@@ -68,6 +68,7 @@ class FitSD(FitMethod):
             self._batch = \
                 self._indexes[self._cnt_pos:end]
         self._cnt_pos = end % npoints
+        savetxt("batch.list", self._batch, fmt = "%d")
 
     def update_evb_in(self):
         # this is stupid (kind of duplicated), modify it in the future:
@@ -121,6 +122,7 @@ class FitSD(FitMethod):
                 fp.close(); evb_par.close()
 
     def one_point_gradient(self, queue, ipoint):
+
         lmp = lammps(cmdargs = ["-screen", "none"])
 #        lmp = lammps()
         restart = restarts[ipoint]
@@ -135,7 +137,7 @@ class FitSD(FitMethod):
                 lmp.command(line)
 
         # do one step with current parameters to provide 
-        # evb.top for following EVB calculations
+        # restart file for following EVB calculations
         if args.debug:
             print(info, "fix %s all evb %s.step%d evb.out.step%d evb.top"%\
             (args.evb_fixid, args.evb_in, self._istep, self._istep))
@@ -144,45 +146,41 @@ class FitSD(FitMethod):
         if args.debug:
             print(info, "run 0")
         lmp.command("run 0")
-#        if not path.isfile("evb.top.%d"%ipoint):
-#            lmp.command("write_top evb.top.%d"%ipoint)
         if args.debug:
-            print(info, "write_top evb.top.%d"%ipoint)
-        lmp.command("write_top evb.top.%d"%ipoint)
+            print(info, "write_restart %d.restart"%ipoint)
+        lmp.command("write_restart %d.restart"%ipoint)
+
         tag = lmp.extract_atom("id", 0)
         f = lmp.extract_atom("f", 3)
         curr_error = error.compute(tag, f, ref, weight.get(ipoint))
+        lmp.close()
+
         gradient = []
         for ip in xrange(len(parameters)):
             errors = []
             for idx in range(2):
+                lmp = lammps(cmdargs = ["-screen", "none"])
+                for line in lammps_input._lines:
+                    if match("\s*read_restart", line):
+                        lmp.command("read_restart %d.restart"%ipoint)
+                    else:
+                        lmp.command(line)
                 info = "DEBUG: istep %d ipoint %d ip %d idx %d:"\
                         %(self._istep, ipoint, ip, idx)
-                # @@@@
-#                if args.debug:
-#                    print( "istep", self._istep, "ipoint", ipoint, 
-#                            "ip", ip, "idx", idx)
                 suffix = "%d.%d"%(ip, idx)
                 if args.debug:
-                    print(info, "fix %s all evb %s.%s evb.out.%s evb.top.%d"%\
-                    (args.evb_fixid, args.evb_in, suffix, suffix, ipoint))
-                lmp.command("fix %s all evb %s.%s evb.out.%s evb.top.%d"%\
-                    (args.evb_fixid, args.evb_in, suffix, suffix, ipoint))
-                # @@@@
-#                if args.debug:
-#                    print( "istep", self._istep, "ipoint", ipoint, 
-#                            "ip", ip, "idx", idx)
+                    print(info, "fix %s all evb %s.%s evb.out.%s evb.top"%\
+                    (args.evb_fixid, args.evb_in, suffix, suffix))
+                lmp.command("fix %s all evb %s.%s evb.out.%s evb.top"%\
+                    (args.evb_fixid, args.evb_in, suffix, suffix))
                 if args.debug:
                     print(info, "run 0")
                 lmp.command("run 0")
-                # @@@@
-#                if args.debug:
-#                    print( "istep", self._istep, "ipoint", ipoint, 
-#                            "ip", ip, "idx", idx)
                 tag = lmp.extract_atom("id", 0)
                 f = lmp.extract_atom("f", 3)
                 # compute error
                 errors.append( error.compute(tag, f, ref, weight.get(ipoint)) )
+                lmp.close()
 #            print(errors)
             gradient.append( (errors[0] - errors[1]) / 2 / self._dx )
             # sanity check for errors
@@ -190,8 +188,8 @@ class FitSD(FitMethod):
                 print("WARNING: largely deivated errros for " +\
                     "istep = %d ipoint = %d ip = %d idx = %d"\
                     %(self._istep, ipoint, ip, idx))
-        lmp.close()
         queue.put((array(gradient), curr_error))
+        system("rm %d.restart"%ipoint)
         if args.debug:
             print("queue.put at istep %d ipoint %d"%(self._istep, ipoint))
 #        print(ipoint, gradient)
@@ -216,7 +214,8 @@ class FitSD(FitMethod):
         # sanity check for evb.out.*
         print("Number of inf or nan in evb.out:")
         system("egrep \"inf|nan|Nan|NaN\" evb.out.* | wc -l")
-        system("rm %s.* %s.* evb.top.* evb.out.*"%(args.evb_in, args.evb_par))
+        #system("rm %s.* %s.* evb.top.* evb.out.*"%(args.evb_in, args.evb_par))
+        system("rm %s.* %s.* evb.out.*"%(args.evb_in, args.evb_par))
         for ip, pname in enumerate(parameters):
             move = self._lr * self._gradient[ip]
             abs_p = abs(para_values[pname])
