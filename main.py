@@ -2,6 +2,8 @@ from __future__ import print_function
 import __builtin__
 import multiprocessing as mp
 import re
+import json
+import sys
 
 from parser import Parser
 from fit_method import FitMethod
@@ -49,6 +51,22 @@ if __name__ == '__main__':
                 para_values[p] = float(m.group(1))
     evb_par.close()
     fit_method.setup()
+    # restore checkpoint
+    if args.read_checkpoint is not None:
+        with open(args.read_checkpoint) as f:
+            chk = json.loads(f.readline())
+            for k in para_values:
+                if k not in chk:
+                    raise BaseException(
+                        "cannot find parameter %s in checkpoint file %s"
+                        %(k, args.read_checkpoint) )
+                else:
+                    para_values[k] = float(chk[k])
+            for k in chk:
+                if k not in para_values:
+                    print("WARNING: parameter %s present in checkpoint file"%k + \
+                          " %s but not in parameter list file %s"
+                          %(args.read_checkpoint, args.parameters))
 
     # naive error checks
     try:
@@ -83,11 +101,15 @@ if __name__ == '__main__':
     print("%d data points provided"%len(restarts))
 #    print("%d parameters to be fitted"%len(parameters))
     print("initial parameters:")
-    print(para_values)
+    for pname in parameters:
+        print(" ", pname, para_values[pname])
+        sys.stdout.flush()
 
     for i in xrange(run_steps):
         fit_method.update()
         if i % verbose_stride == 0:
+            print("step =", i)
+            sys.stdout.flush()
             fit_method.verbose()
         if i % checkpoint_stride == 0:
             fit_method.checkpoint()

@@ -4,7 +4,7 @@ from time import time, sleep
 from numpy.random import seed, shuffle
 from numpy import array, argsort, sign, savetxt, sqrt
 from re import match
-from os import path, system
+from os import path, system, popen
 import json
 import sys
 
@@ -213,15 +213,16 @@ class FitSD(FitMethod):
         results = [q.get() for indx in self._batch]
         self._gradient = \
             sum( [results[_][0] for _ in xrange(self._batch_size)] )
+        self._grad_norm = sqrt(sum(self._gradient**2))
         if args.sd_normalize_grad:
-            self._gradient = self._gradient / sqrt(sum(self._gradient**2))
+            if self._grad_norm != 0:
+                self._gradient = self._gradient / self._grad_norm
         self._curr_error = \
             sum( [results[_][1] for _ in xrange(self._batch_size)] )
         # sanity check for evb.out.*
-        print("Number of inf or nan in evb.out:")
-        sys.stdout.flush()
-        system("egrep \"inf|nan|Nan|NaN\" evb.out.* | wc -l")
-        sys.stdout.flush()
+        num_inf_nans = int(popen("egrep -i \"inf|nan\" evb.out.* | wc -l").read())
+        if num_inf_nans > 0:
+            raise BaseException("inf or nan found in evb.out at step %d"%self._istep)
         #system("rm %s.* %s.* evb.top.* evb.out.*"%(args.evb_in, args.evb_par))
         system("rm %s.* %s.* evb.out.*"%(args.evb_in, args.evb_par))
         for ip, pname in enumerate(parameters):
@@ -253,6 +254,7 @@ class FitSD(FitMethod):
             print(" ", pname, para_values[pname])
             sys.stdout.flush()
         print("learning rate = ", self._lr)
+        print("native norm of gradient =", self._grad_norm)
         print("error =", self._curr_error)
         sys.stdout.flush()
 

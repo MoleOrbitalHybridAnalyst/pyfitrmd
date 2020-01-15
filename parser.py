@@ -44,6 +44,9 @@ class Parser(object):
             '--checkpoint_name', default = 'checkpoint',
             help = 'checkpoint file name')
         self._arg_parser.add_argument(
+            '--read_checkpoint', default = None,
+            help = 'read a checkpoint with this name to continue')
+        self._arg_parser.add_argument(
             '--debug', action = 'store_true',
             help = 'print debug info')
 
