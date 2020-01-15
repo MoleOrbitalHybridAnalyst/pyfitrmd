@@ -2,10 +2,11 @@ from __future__ import print_function
 from multiprocessing import cpu_count, Process, Queue
 from time import time, sleep
 from numpy.random import seed, shuffle
-from numpy import array, argsort, sign, savetxt
+from numpy import array, argsort, sign, savetxt, sqrt
 from re import match
 from os import path, system
 import json
+import sys
 
 from fit_method import FitMethod, lammps
 
@@ -21,6 +22,9 @@ class FitSD(FitMethod):
             help = 'displacement for numerical derivatives')
         parser._arg_parser.add_argument(
             '--sd_lr', default = 1e-3, help = 'initial learning rate')
+        parser._arg_parser.add_argument(
+            '--sd_normalize_grad', action = 'store_true', 
+            help = 'normalize gradient to be an unit vector')
         parser._arg_parser.add_argument(
             '--sd_batch_size', default = 'ncpus', help = 'batch size')
         parser._arg_parser.add_argument(
@@ -209,11 +213,15 @@ class FitSD(FitMethod):
         results = [q.get() for indx in self._batch]
         self._gradient = \
             sum( [results[_][0] for _ in xrange(self._batch_size)] )
+        if args.sd_normalize_grad:
+            self._gradient = self._gradient / sqrt(sum(self._gradient**2))
         self._curr_error = \
             sum( [results[_][1] for _ in xrange(self._batch_size)] )
         # sanity check for evb.out.*
         print("Number of inf or nan in evb.out:")
+        sys.stdout.flush()
         system("egrep \"inf|nan|Nan|NaN\" evb.out.* | wc -l")
+        sys.stdout.flush()
         #system("rm %s.* %s.* evb.top.* evb.out.*"%(args.evb_in, args.evb_par))
         system("rm %s.* %s.* evb.out.*"%(args.evb_in, args.evb_par))
         for ip, pname in enumerate(parameters):
@@ -234,10 +242,19 @@ class FitSD(FitMethod):
 
     def verbose(self):
         super(FitSD, self).verbose()
-        print("error =", self._curr_error)
-        print("para_values =", para_values)
-        print("gradient = ", self._gradient)
+        print("gradient =")
+        sys.stdout.flush()
+        for ip, pname in enumerate(parameters):
+            print(" ", "g_" + pname, self._gradient[ip])
+            sys.stdout.flush()
+        print("para_values =")
+        sys.stdout.flush()
+        for pname in parameters:
+            print(" ", pname, para_values[pname])
+            sys.stdout.flush()
         print("learning rate = ", self._lr)
+        print("error =", self._curr_error)
+        sys.stdout.flush()
 
     def checkpoint(self):
         super(FitSD, self).checkpoint()
